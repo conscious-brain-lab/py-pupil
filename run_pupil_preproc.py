@@ -1,0 +1,52 @@
+import numpy as np
+import scipy as sp
+import seaborn as sn
+import matplotlib.pylab as pl
+from IPython import embed as shell 
+import glob
+import os 
+
+from hedfpy import *
+
+sn.set(style="ticks")
+
+dataDir =  '/Users/stijnnuiten/Documents/UvA/Data/perception/'
+task = 'loc'
+subs = [25]
+overwrite = True
+
+low_pass_pupil_f, high_pass_pupil_f = 6.0, 0.01
+for s in subs:
+	files = glob.glob(os.path.join(dataDir, task,str(s),'*.edf'))
+	for f in files:
+		print 'now preprocessing file ' + f
+		alias = f.split('/')[-1][:4]
+
+		# initiate HDFEyeoperator
+		h5file = os.path.join(dataDir, task,str(s) , alias + '.h5')
+		if os.path.isfile(h5file) and overwrite:
+			os.remove(h5file)
+		ho = HDFEyeOperator(os.path.expanduser(h5file))
+
+		# extract data from EDF and run preprocessing (blink detection, filtering)
+		ho.add_edf_file(f)
+		ho.edf_message_data_to_hdf(alias = alias)
+		ho.edf_gaze_data_to_hdf(alias = alias, pupil_hp = high_pass_pupil_f, pupil_lp = low_pass_pupil_f)
+
+		# # downsample for plotting
+		# downsample_rate = 10
+
+		# # load times per session:
+		# trial_times = ho.read_session_data(alias, 'trials')
+		# trial_phase_times = ho.read_session_data(alias, 'trial_phases')
+
+		# # check at what timestamps the recording started:
+		# session_start_EL_time = np.array( trial_phase_times[np.array(trial_phase_times['trial_phase_index'] == 1) * np.array(trial_phase_times['trial_phase_trial'] == 0)]['trial_phase_EL_timestamp'] )[0]
+		# session_stop_EL_time = np.array(trial_times['trial_end_EL_timestamp'])[-1]
+
+		# # and, find some aspects of the recording such as sample rate and recorded eye
+		# sample_rate = ho.sample_rate_during_period([session_start_EL_time, session_stop_EL_time], alias)
+		# eye = ho.eye_during_period([session_start_EL_time, session_stop_EL_time], alias)
+		# if len(eye) > 0:
+		#     eye = ['L','R'][0]
+
