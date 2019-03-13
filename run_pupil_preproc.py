@@ -15,7 +15,16 @@ task = 'loc'
 subs = [25]
 overwrite = True
 
-low_pass_pupil_f, high_pass_pupil_f = 6.0, 0.01
+analysis_params = {
+                'sample_rate' : 1000.0,
+                'lp' : 6.0,
+                'hp' : 0.01,
+                'normalization' : 'zscore',
+                'regress_blinks' : True,
+                'regress_sacs' : True,
+                'regress_xy' : False,
+                'use_standard_blinksac_kernels' : False,
+                }
 for s in subs:
 	files = glob.glob(os.path.join(dataDir, task,str(s),'*.edf'))
 	for f in files:
@@ -31,7 +40,14 @@ for s in subs:
 		# extract data from EDF and run preprocessing (blink detection, filtering)
 		ho.add_edf_file(f)
 		ho.edf_message_data_to_hdf(alias = alias)
-		ho.edf_gaze_data_to_hdf(alias = alias, pupil_hp = high_pass_pupil_f, pupil_lp = low_pass_pupil_f)
+		ho.edf_gaze_data_to_hdf(alias=alias,
+                                    sample_rate=analysis_params['sample_rate'],
+                                    pupil_lp=analysis_params['lp'],
+                                    pupil_hp=analysis_params['hp'],
+                                    normalization=analysis_params['normalization'],
+                                    regress_blinks=analysis_params['regress_blinks'],
+                                    regress_sacs=analysis_params['regress_sacs'],
+                                    use_standard_blinksac_kernels=analysis_params['use_standard_blinksac_kernels'],)
 
 		# # downsample for plotting
 		# downsample_rate = 10
