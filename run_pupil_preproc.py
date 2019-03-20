@@ -21,14 +21,14 @@ subs = [25]
 overwrite = True
 
 analysis_params = {
-                'sample_rate' : 1000.0,
+                'sample_rate' : 500,
                 'lp' : 6.0,
                 'hp' : 0.01,
                 'normalization' : 'psc',
                 'regress_blinks' : True,
                 'regress_sacs' : True,
                 'regress_xy' : False,
-                'use_standard_blinksac_kernels' : False,
+                'use_standard_blinksac_kernels' : True,
                 }
 
 class pupilSession(object):
@@ -39,36 +39,38 @@ class pupilSession(object):
 		self.analysis_params = analysis_params
 		self.alias = str(subject) + '_' + str(index) 
 		self.pupilDir = os.path.join(dataDir,self.task, str(self.subject),'preproc/') 
+		self.load_h5()
 
 	def preproc(self):
 		files = glob.glob(os.path.join(dataDir, self.task,str(self.subject),'*.edf'))
-		for f in files:
-			print 'now preprocessing file ' + f
-			alias = f.split('/')[-1][:4]
-			preprocDir = os.path.join(dataDir, self.task,str(self.subject), 'preproc/')
+		filename = glob.glob(os.path.join(dataDir, self.task, str(self.subject),str(self.subject) + '_' + str(self.index) +'*.edf'))[0]
+		print 'now preprocessing file ' + filename
+	
+		alias = filename.split('/')[-1][:4]
+		preprocDir = os.path.join(dataDir, self.task,str(self.subject), 'preproc/')
 
-			try:
-			    os.makedirs(os.path.join(preprocDir, 'raw/'))
-			except OSError:
-			    pass				
-			# initiate HDFEyeoperator
-			h5file = preprocDir + alias + '.h5'
-			if os.path.isfile(h5file) and overwrite:
-				os.remove(h5file)
-			ho = HDFEyeOperator(os.path.expanduser(h5file))
+		try:
+		    os.makedirs(os.path.join(preprocDir, 'raw/'))
+		except OSError:
+		    pass				
+		# initiate HDFEyeoperator
+		h5file = preprocDir + alias + '.h5'
+		if os.path.isfile(h5file) and overwrite:
+			os.remove(h5file)
+		ho = HDFEyeOperator(os.path.expanduser(h5file))
 
-			# extract data from EDF and run preprocessing (blink detection, filtering)
-			shutil.copy(f, os.path.join(preprocDir, 'raw', '{}.edf'.format(alias)))
-			ho.add_edf_file(os.path.join(preprocDir, 'raw', '{}.edf'.format(alias)))
-			ho.edf_message_data_to_hdf(alias = alias)
-			ho.edf_gaze_data_to_hdf(alias=alias,
-	                                    sample_rate=self.analysis_params['sample_rate'],
-	                                    pupil_lp=self.analysis_params['lp'],
-	                                    pupil_hp=self.analysis_params['hp'],
-	                                    normalization=self.analysis_params['normalization'],
-	                                    regress_blinks=self.analysis_params['regress_blinks'],
-	                                    regress_sacs=self.analysis_params['regress_sacs'],
-	                                    use_standard_blinksac_kernels=self.analysis_params['use_standard_blinksac_kernels'],)
+		# extract data from EDF and run preprocessing (blink detection, filtering)
+		shutil.copy(filename, os.path.join(preprocDir, 'raw', '{}.edf'.format(alias)))
+		ho.add_edf_file(os.path.join(preprocDir, 'raw', '{}.edf'.format(alias)))
+		ho.edf_message_data_to_hdf(alias = alias)
+		ho.edf_gaze_data_to_hdf(alias=alias,
+                                    sample_rate=self.analysis_params['sample_rate'],
+                                    pupil_lp=self.analysis_params['lp'],
+                                    pupil_hp=self.analysis_params['hp'],
+                                    normalization=self.analysis_params['normalization'],
+                                    regress_blinks=self.analysis_params['regress_blinks'],
+                                    regress_sacs=self.analysis_params['regress_sacs'],
+                                    use_standard_blinksac_kernels=self.analysis_params['use_standard_blinksac_kernels'],)
 
 	def load_h5(self ):
 		self.hdf5_filename = self.alias + '.h5'
@@ -79,14 +81,17 @@ class pupilSession(object):
 		self.blocks = np.unique(self.trial_parameters['block']).shape[0]
 		self.block_duration = (self.trial_parameters['block']==0).sum()
 		self.first_trials_in_block = [self.block_duration * b for b in range(self.blocks)]
+		session_start_EL_time = np.array(self.trial_times['trial_start_EL_timestamp'])[0]
+		session_stop_EL_time = np.array(self.trial_times['trial_end_EL_timestamp'])[-1]
+		self.sample_rate = self.ho.sample_rate_during_period([session_start_EL_time, session_stop_EL_time], self.alias)
 
-	def load_pupil(self,data_type='pupil_bp',requested_eye = 'L' ):
+	def load_pupil(self, events, data_type='pupil_bp',requested_eye = 'L'):
+		events_times = {}
+		for ev in events:
+			events_times[ev + '_times'] = []
+
 		trial_indices = []
-		fix_times = []
 		blink_times = []
-		stim_times = []
-		resp_times = []
-		feedback_times = []
 		end_time_trial = []
 		nr_blinks =[]
 		pupil_data = []
@@ -98,7 +103,6 @@ class pupilSession(object):
 		session_time = 0
 
 		for ftib in self.first_trials_in_block:
-			# shell()
 			session_start_EL_time = np.array(self.trial_times['trial_start_EL_timestamp'])[ftib]
 			if ftib == self.first_trials_in_block[-1]:
 				session_stop_EL_time = np.array(self.trial_times['trial_end_EL_timestamp'])[-1]
@@ -112,10 +116,9 @@ class pupilSession(object):
 			        
 			self.sample_rate = self.ho.sample_rate_during_period([session_start_EL_time, session_stop_EL_time], self.alias)
 
-			fix_times.append((np.array(self.trial_phase_times[self.trial_phase_times['trial_phase_index']==1]['trial_phase_EL_timestamp'][ftib:ftib+self.block_duration] - session_start_EL_time + session_time) / self.sample_rate))
-			stim_times.append((np.array(self.trial_phase_times[self.trial_phase_times['trial_phase_index'] == 2]['trial_phase_EL_timestamp'][ftib:ftib+self.block_duration] - session_start_EL_time + session_time) / self.sample_rate ))
-			resp_times.append((np.array(self.trial_phase_times[self.trial_phase_times['trial_phase_index'] == 3]['trial_phase_EL_timestamp'][ftib:ftib+self.block_duration] - session_start_EL_time + session_time) / self.sample_rate ))
-			feedback_times.append((np.array(self.trial_phase_times[self.trial_phase_times['trial_phase_index'] == 4]['trial_phase_EL_timestamp'][ftib:ftib+self.block_duration] - session_start_EL_time + session_time) / self.sample_rate ))
+			for ev in events:
+				events_times[ev + '_times'].append((np.array(self.trial_phase_times[self.trial_phase_times['trial_phase_index']==events[ev]]['trial_phase_EL_timestamp'][ftib:ftib+self.block_duration] - session_start_EL_time + session_time) / self.sample_rate))
+
 			end_time_trial.append((np.array(self.trial_times['trial_end_EL_timestamp'][ftib:ftib+self.block_duration]) - session_start_EL_time + session_time) / self.sample_rate)
 
 			eyelink_blink_data = self.ho.read_session_data(self.alias, 'blinks_from_message_file')
@@ -129,7 +132,6 @@ class pupilSession(object):
 			b_end_times_t = (b_end_times[b_indices] - session_start_EL_time) 
 			blinks = np.array(b_start_times_t)            
 			blink_times.append(((blinks + session_time) / self.sample_rate ))
-
 
 			pupil = np.squeeze(self.ho.signal_during_period(time_period = [session_start_EL_time, session_stop_EL_time], alias = self.alias, signal = data_type, requested_eye = requested_eye))
 			pupil_data.append((pupil - np.median(pupil))/ pupil.std())
@@ -153,13 +155,10 @@ class pupilSession(object):
 		nr_blinks.append(np.array([len(blink_times[x]) for x in range(len(blink_times))]) )
 		blink_rate = nr_blinks/total_time  #blink rate per minute 
 
+		for ev in events:
+			setattr(self,ev + '_times', np.concatenate(events_times[ev + '_times']))
+
 		self.end_time_trial =  np.concatenate(end_time_trial)
-		self.fix_times = np.concatenate(fix_times)
-		self.stim_times = np.concatenate(stim_times)
-		self.resp_times = np.concatenate(resp_times)
-		self.feedback_times = np.concatenate(feedback_times)
-
-
 		self.blink_times = np.concatenate(blink_times)
 		self.blink_times_b = np.copy(blink_times) 
 		self.nr_blinks= np.hstack(nr_blinks)
@@ -176,9 +175,11 @@ class pupilSession(object):
 		self.run_sample_limits = np.array([np.cumsum(samples_per_run)[:-1],np.cumsum(samples_per_run)[1:]]).T
 		self.run_trial_limits = np.array([np.cumsum(trials_per_run)[:-1],np.cumsum(trials_per_run)[1:]]).T
 		# shell()	
-			# folder_name = 'pupil_data'
-			# with pd.HDFStore(self.ho.input_object) as h5_file:
-			# 	# h5_file.put("/%s/%s/%s"%(self.alias,folder_name, 'pupil_data'), pd.Series(np.array(self.pupil_data)))
+		# self.ho.data_frame_to_hdf('', 'parameters', parameters)
+
+		folder_name = 'pupil_data'
+		with pd.HDFStore(self.ho.input_object) as h5_file:
+			h5_file.put("/%s/%s/%s"%(self.alias,folder_name, 'pupil_data'), pd.Series(np.array(self.pupil_data)))
 			# 	h5_file.put("/%s/%s/%s"%(self.alias,folder_name, 'sample_rate'), pd.Series(self.sample_rate))
 		
 	def deconvolve_colour_sound(self, analysis_sample_rate = 25, interval = [-0.5,5.5],  data_type = 'pupil_bp_psc', requested_eye = 'L', microsaccades_added=False):
@@ -243,72 +244,92 @@ class pupilSession(object):
 			plt.legend(loc=2)
 			sn.despine(offset=10)
 
-	def calcTPR(self,data_type = 'pupil_bp_psc', requested_eye = 'L'):
+	def calcTPR(self, baseline_ev, target_ev, data_type = 'pupil_bp_clean_psc', requested_eye = 'L'):
 		# Calculate task-evoked pupillary response (TPR) per trial, defined as mean aplitude pupil (-1s to 1.5s from choice)
 		# minus baseline (-0.5 to 0s from stim)
+		for ev in [baseline_ev, target_ev]:
+			if not hasattr(self,ev + '_times'):
+				print ev + ' is missing'			
 
-		# shell()
 		parameters = self.ho.read_session_data(self.alias, 'parameters')
-		parameters_joined = parameters
-		target_joined = parameters_joined['signal_present']#[(-parameters_joined['omissions'])]
-		correct_joined = parameters_joined['correct']
-		
-		hit_joined = (parameters_joined['signal_present']==1) * (parameters_joined['correct']==1)
-		fa_joined = (parameters_joined['signal_present']==0) * (parameters_joined['correct']==0)
 
-		# hit_joined = parameters_joined['hit']#[(-parameters_joined['omissions'])]
-		# fa_joined = parameters_joined['fa']#[(-parameters_joined['omissions'])]
+		session_start = np.array(self.trial_times['trial_start_EL_timestamp'])[0]
+		session_end = np.array(self.trial_times['trial_start_EL_timestamp'])[-1]
+		pupil_data = self.ho.data_from_time_period((session_start, session_end), self.alias)
 
-		(dprime, c) = SDT(target_joined, hit_joined, fa_joined)
+		pupil = np.array(pupil_data[(requested_eye + '_' + data_type)])
+		time = (np.array(pupil_data['time']) - session_start)/self.sample_rate
 
-		# target = [ param['present'][(-param['omissions'])] for param in parameters ]
-		# hit = [ param['hit'][(-param['omissions'])] for param in parameters ]
-		# fa = [ param['fa'][(-param['omissions'])] for param in parameters ]        
+		bl = np.array([np.mean(pupil[(time>i-0.5)*(time<i)]) for i in getattr(self, baseline_ev +'_times')]) 
+		tpr = np.array([np.mean(pupil[(time>i-1)*(time<i+1.5)]) for i in getattr(self, target_ev +'_times')]) 
+		# Check if num baseline events matches num target events. If not, check how the two are aligned.
+		# If e.g. first baseline event is missing, remove first trial in its entirety.
+		while bl.shape[0] != tpr.shape[0]:
+			print 'shapes dont match, removing trial'
+			if getattr(self, baseline_ev +'_times')[0]> getattr(self, target_ev +'_times')[0]:
+				tpr=tpr[1:]
+				parameters = parameters.drop([0])
+			else:
+				tpr=tpr[:-1]
+				parameters = parameters.drop(parameters.index[-1])
+		# Subtract the baseline from the evoked pupil response to get the actual TPR
+		tpr_bl = tpr - bl
 
-		pupil_data = self.ho.data_from_time_period((np.array(self.trial_times['trial_start_EL_timestamp'])[0], np.array(self.trial_times['trial_end_EL_timestamp'])[-1]), self.alias)
+		# add to parameters
+		parameters['tpr_bl_' + data_type] = tpr_bl
+		parameters['tpr_' + data_type ] = tpr
+		parameters['bl_' + data_type] = bl
+		# parameters['pupil_b_lp'] = bp_lp
+		# parameters['pupil_d_lp'] = tpr_lp
+		# parameters['d_prime'] = dprime
+		# parameters['criterion'] = c
+		# parameters['subject'] = self.subject
 
-		session_start = self.trial_times['trial_start_EL_timestamp'][0]
-		pupil_lp = np.array(pupil_data[(requested_eye + '_pupil_lp_clean_psc')])
-		pupil_bp = np.array(pupil_data[(requested_eye + '_pupil_bp_clean_psc')])
-		time = np.array(pupil_data['time']) - session_start
+		# and store in H5-file
+		self.ho.data_frame_to_hdf('', 'parameters', parameters)
 
-		bp_lp = np.array([np.mean(pupil_lp[(time>i-500)*(time<i)]) for i in self.stim_times]) 
-		bp_bp = np.array([np.mean(pupil_bp[(time>i-500)*(time<i)]) for i in self.stim_times]) 
-		tpr_lp =( np.array([np.mean(pupil_lp[(time>i-1000)*(time<i+1500)]) for i in self.resp_times]) - bp_lp[-1] )
-		tpr_bp = np.array([np.mean(pupil_bp[(time>i-1000)*(time<i+1500)]) for i in self.resp_times]) - bp_bp[-1] 
+	def splitTPR(self,data_type = 'pupil_bp_clean_psc'):
+		parameters = self.ho.read_session_data('','parameters')
+		pupil_d = np.array(parameters['tpr_bl_' + data_type])
+		parameters = parameters[~np.isnan(pupil_d)]
+		pupil_d = pupil_d[~np.isnan(pupil_d)]
 
-		parameters_joined['pupil_d'] = tpr_bp
-		parameters_joined['pupil_b'] = bp_bp
-		parameters_joined['pupil_d'] = tpr_bp
-		parameters_joined['pupil_b_lp'] = bp_lp
-		parameters_joined['pupil_d_lp'] = tpr_lp
-		parameters_joined['d_prime'] = dprime
-		parameters_joined['criterion'] = c
-		parameters_joined['subject'] = self.subject
-		self.ho.data_frame_to_hdf('', 'parameters_joined', parameters_joined)
-
-	def splitTPR(self):
-		parameters = self.ho.read_session_data('parameters_joined','')
-		pupil_d = np.array(parameters['pupil_d'])
 		# plt.plot(parameters['pupil_d'])
-
 		p_h = pupil_d <= np.percentile(pupil_d, 40) 
-		p_l = pupil_d >= np.percentile(pupil_d, 60) 
-		for s in np.array(np.unique(parameters['session']), dtype=int):
-		    pupil_b = np.array(parameters['pupil_b'])[np.array(d.session) == s]
-		    pupil_d = np.array(d['pupil_d'])[np.array(d.session) == s]
-		    pupil = pupil_d
-		    p_l.append( pupil <= np.percentile(pupil, 40) )
-		    p_h.append( pupil >= np.percentile(pupil, 60) )
+		p_l = pupil_d >= np.percentile(pupil_d, 60)
+
+		target = parameters['signal_present']#[(-parameters_joined['omissions'])]
+		correct = parameters['correct']
+		
+		hit = (parameters['signal_present']==1) * (parameters['correct']==1)
+		fa = (parameters['signal_present']==0) * (parameters['correct']==0)
+
+		pups = {'p_h':p_h,'p_l':p_l}
+		for p in pups.keys():
+			target = parameters['signal_present'][pups[p]]
+			correct = parameters['correct'][pups[p]]
+
+			hit = (target==1) * (correct==1)
+			fa = (target==0) * (correct==0)
+
+			(dprime, c) = SDT(target, hit, fa)
+			print "d-prime for %s + is: %.2f" %(p,dprime) 
+			print "c for %s + is: %.2f" %(p,c) 
+
+		# for s in np.array(np.unique(parameters['session']), dtype=int):
+		#     pupil_b = np.array(parameters['pupil_b'])[np.array(d.session) == s]
+		#     pupil_d = np.array(d['pupil_d'])[np.array(d.session) == s]
+		#     pupil = pupil_d
+		#     p_l.append( pupil <= np.percentile(pupil, 40) )
+		#     p_h.append( pupil >= np.percentile(pupil, 60) )
 
 
 def main():
-	pS = pupilSession(subject=25, index = 0, task = task,analysis_params=analysis_params)
+	pS = pupilSession(subject=25, index = 2, task = task,analysis_params=analysis_params)
 	pS.preproc()
-	pS.load_h5()
-	pS.load_pupil()
-	pS.deconvolve_colour_sound()
-	pS.calcTPR()
+	pS.load_pupil(events={'fix':1, 'stim':2, 'resp':3})
+	# pS.deconvolve_colour_sound()
+	pS.calcTPR(baseline_ev = 'fix', target_ev='resp')
 	pS.splitTPR()
 
 if __name__ == '__main__':
