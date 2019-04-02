@@ -259,8 +259,8 @@ class pupilSession(object):
 
 def main():
 	# Initiate pupil object
-
 	pS = pupilSession(subject=subs[s], index = ids[id], task = task,analysis_params=analysis_params)
+	
 	pS.preproc()
 	pS.load_pupil(events={'fix':1, 'stim':2, 'resp':3}, omissions={'restarted':1})
 	pS.calcTPR(baseline_ev = 'fix', target_ev='resp')
