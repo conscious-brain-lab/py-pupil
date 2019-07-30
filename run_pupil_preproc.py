@@ -9,18 +9,22 @@ import shutil
 from hedfpy import *
 import scipy.stats as stats 
 
-sys.path.append(os.environ['ANALYSIS_HOME'])
+# sys.path.append(os.environ['ANALYSIS_HOME'])
 
 
 from fir import FIRDeconvolution
 import pandas as pd
-from functions.funcs import SDT, label_diff
+# shell()
+from functions.statsfuncs import *
+from functions.plotfuncs import *
+from functions.randfuncs import *
 
 sn.set(style="ticks")
 
-dataDir =  '/Users/stijnnuiten/Documents/UvA/Data/perception/'
-task = 'loc'
-subs = [25]
+dataDir =  '/Users/stijnnuiten/Desktop/Lola/pupil/'
+task = 'detectFA'
+subs = ['01']
+ids = [0]
 overwrite = True
 
 analysis_params = {
@@ -42,12 +46,17 @@ class pupilSession(object):
 		self.analysis_params = analysis_params
 		self.alias = str(subject) + '_' + str(index) 
 		self.pupilDir = os.path.join(dataDir,self.task, str(self.subject),'preproc/') 
-		self.load_h5()
+		# try:
+		# except:
+		# 	print('run pre-processing first')
 
-	def load_h5(self ):
+	def load_h5(self):
 		self.hdf5_filename = self.alias + '.h5'
-		self.ho = HDFEyeOperator(self.pupilDir + self.hdf5_filename)
-		self.trial_times = self.ho.read_session_data(self.alias, 'trials')
+		try:
+			self.ho = HDFEyeOperator(self.pupilDir + self.hdf5_filename)
+			self.trial_times = self.ho.read_session_data(self.alias, 'trials')
+		except:
+			return
 		self.trial_phase_times = self.ho.read_session_data(self.alias, 'trial_phases')        
 		self.trial_parameters = self.ho.read_session_data(self.alias, 'parameters')
 		self.blocks = np.unique(self.trial_parameters['block']).shape[0]
@@ -58,9 +67,9 @@ class pupilSession(object):
 		self.sample_rate = self.ho.sample_rate_during_period([session_start_EL_time, session_stop_EL_time], self.alias)
 
 	def preproc(self):
-		files = glob.glob(os.path.join(dataDir, self.task,str(self.subject),'*.edf'))
+		# shell()
 		filename = glob.glob(os.path.join(dataDir, self.task, str(self.subject),str(self.subject) + '_' + str(self.index) +'*.edf'))[0]
-		print 'now preprocessing file ' + filename
+		print('now preprocessing file ' + filename)
 	
 		alias = filename.split('/')[-1][:4]
 		preprocDir = os.path.join(dataDir, self.task,str(self.subject), 'preproc/')
@@ -103,7 +112,6 @@ class pupilSession(object):
 		samples_per_run = [0]
 		trials_per_run = [0]
 		session_time = 0
-
 		for ftib in self.first_trials_in_block:
 			session_start_EL_time = np.array(self.trial_times['trial_start_EL_timestamp'])[ftib]
 			if ftib == self.first_trials_in_block[-1]:
@@ -157,13 +165,17 @@ class pupilSession(object):
 
 		nr_blinks.append(np.array([len(blink_times[x]) for x in range(len(blink_times))]) )
 		blink_rate = nr_blinks/total_time  #blink rate per minute 
-		shell()
 		for ev in events:
 			setattr(self,ev + '_times', np.concatenate(events_times[ev + '_times']))
-			print np.concatenate(events_times[ev + '_times']).shape
+			# print np.concatenate(events_times[ev + '_times']).shape
 			# get
-		self.oms = np.array([self.trial_parameters[omissions.keys()[i]] == omissions[omissions.keys()[i]] for i in range(len(omissions))])
-		self.oms = np.any(self.oms,0)
+		oms = []
+		# shell()
+		for i in range(len(omissions)):
+			oms.append(self.trial_parameters[list(omissions.keys())[i]] == omissions[list(omissions.keys())[i]])
+
+		# self.oms = np.array([self.trial_parameters[omissions.keys()[i]] == omissions[omissions.keys()[i]] for i in range(len(omissions))])
+		self.oms =  np.hstack(oms)#,0)
 		self.end_time_trial =  np.concatenate(end_time_trial)[~self.oms]
 		self.blink_times = np.concatenate(blink_times)
 		self.blink_times_b = np.copy(blink_times)
@@ -173,7 +185,7 @@ class pupilSession(object):
 		self.pupil = np.hstack(pupil)
 		self.pupil_data = np.hstack(pupil_data)
 		self.pupil_baseline = np.hstack(pupil_baseline)
-		self.trial_indices = np.hstack(trial_indices)[~self.oms ]
+		self.trial_indices =np.array(trial_indices[0],dtype=int)[~self.oms ]
 		self.pupil_raw = np.hstack(pupil_raw)
 
 		# Also remove omitted trials from parameter DataFrame
@@ -181,7 +193,7 @@ class pupilSession(object):
 		try:
 			parameters = parameters.iloc[self.trial_indices]
 		except:
-			print '\n\n\n\n\n\n No trials omitted in parameters DF \n\n\n\n\n\n'
+			print('\n\n\n\n\n\n No trials omitted in parameters DF \n\n\n\n\n\n')
 			pass
 
 		self.run_sample_limits = np.array([np.cumsum(samples_per_run)[:-1],np.cumsum(samples_per_run)[1:]]).T
@@ -191,7 +203,7 @@ class pupilSession(object):
 		self.ho.data_frame_to_hdf(self.alias, 'parameters', parameters)
 		folder_name = 'pupil_data'
 		with pd.HDFStore(self.ho.input_object) as h5_file:
-			h5_file.put("/%s/%s/%s"%(self.alias,folder_name, 'pupil_data'), pd.Series(np.array(self.pupil_data)))
+			h5_file.put("/%s/%s/"%(self.alias,folder_name), pd.Series(np.array(self.pupil_data)))
 			# 	h5_file.put("/%s/%s/%s"%(self.alias,folder_name, 'sample_rate'), pd.Series(self.sample_rate))
 
 	def calcTPR(self, baseline_ev, target_ev, data_type = 'pupil_bp_clean_psc', requested_eye = 'L'):
@@ -199,23 +211,29 @@ class pupilSession(object):
 		# minus baseline (-0.5 to 0s from stim)
 		for ev in [baseline_ev, target_ev]:
 			if not hasattr(self,ev + '_times'):
-				print ev + ' is missing'			
-		shell()
-		parameters = self.ho.read_session_data(self.alias, 'parameters')
+				print( ev + ' is missing'	)		
 
+		parameters = self.ho.read_session_data(self.alias, 'parameters')
+		trials = np.array(parameters['trial_nr'],dtype=int)
 		session_start = np.array(self.trial_times['trial_start_EL_timestamp'])[0]
 		session_end = np.array(self.trial_times['trial_start_EL_timestamp'])[-1]
 		pupil_data = self.ho.data_from_time_period((session_start, session_end), self.alias)
 
 		pupil = np.array(pupil_data[(requested_eye + '_' + data_type)])
 		time = (np.array(pupil_data['time']) - session_start)/self.sample_rate
-
-		bl = np.array([np.mean(pupil[(time>i-0.5)*(time<i)]) for i in getattr(self, baseline_ev +'_times')]) 
-		tpr = np.array([np.mean(pupil[(time>i-1)*(time<i+1.5)]) for i in getattr(self, target_ev +'_times')]) 
+		bl = []
+		tpr = []
+		for i in getattr(self, baseline_ev +'_times'):
+			bl.append( np.mean(pupil[(time>i-0.5)*(time<i)]) )
+		for i in  getattr(self, target_ev +'_times'):
+			tpr.append(np.mean(pupil[(time>i-1)*(time<i+1.5)])) 
+		bl = np.array(bl)[trials]
+		tpr = np.array(tpr)[trials]
+				# for i in getattr(self, target_ev +'_times')]) 
 		# Check if num baseline events matches num target events. If not, check how the two are aligned.
 		# If e.g. first baseline event is missing, remove first trial in its entirety.
-		while bl.shape[0] != tpr.shape[0]:
-			print 'shapes dont match, removing trial'
+		while len(bl) != len(tpr):#.shape[0] != tpr.shape[0]:
+			print ('shapes dont match, removing trial')
 			if getattr(self, baseline_ev +'_times')[0]> getattr(self, target_ev +'_times')[0]:
 				tpr=tpr[1:]
 				parameters = parameters.drop([0])
@@ -243,26 +261,31 @@ class pupilSession(object):
 		p_l = pupil_d >= np.percentile(pupil_d, 60)
 
 		pups = {'p_h':p_h,'p_l':p_l}
+		shell()
 		for p in pups.keys():
 			target = parameters['signal_present'][pups[p]]
 			correct = parameters['correct'][pups[p]]
 
 			hit = (target==1) * (correct==1)
 			fa = (target==0) * (correct==0)
+			miss = (target==1) * (correct==0)
+			cr = (target==0) * (correct==1)
 
-			(dprime, c) = SDT(target, hit, fa)
-			print "d-prime for %s + is: %.2f" %(p,dprime) 
-			print "c for %s + is: %.2f" %(p,c) 
+			(dprime, c,_,_) = SDT(np.array(target), np.array(hit), np.array(fa))
+			print ("d-prime for %s + is: %.2f" %(p,dprime) )
+			print ("c for %s + is: %.2f" %(p,c) )
 
 		parameters['p_l'] = pd.Series(p_l)
 		parameters['p_h'] = pd.Series(p_h)
 
 def main():
 	# Initiate pupil object
-	pS = pupilSession(subject=subs[s], index = ids[id], task = task,analysis_params=analysis_params)
+	pS = pupilSession(subject=subs[0], index = ids[0], task = task,analysis_params=analysis_params)
 	
 	pS.preproc()
-	pS.load_pupil(events={'fix':1, 'stim':2, 'resp':3}, omissions={'restarted':1})
+	pS.load_h5()
+
+	pS.load_pupil(events={'fix':1, 'stim':2, 'resp':3}, omissions={'fix_lost':1})
 	pS.calcTPR(baseline_ev = 'fix', target_ev='resp')
 	pS.splitTPR()
 
