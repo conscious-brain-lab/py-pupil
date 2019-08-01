@@ -22,9 +22,9 @@ from functions.randfuncs import *
 sn.set(style="ticks")
 
 dataDir =  '/Users/stijnnuiten/Desktop/Lola/pupil/'
-task = 'detectFA'
-subs = ['01']
-ids = [0]
+task = 'detect'
+subs = ['03']
+ids = [3]
 overwrite = True
 
 analysis_params = {
@@ -51,11 +51,17 @@ class pupilSession(object):
 		# 	print('run pre-processing first')
 
 	def load_h5(self):
-		self.hdf5_filename = self.alias + '.h5'
+		shell()
+		self.alias = 'det_03_2'
+		self.hdf5_filename = 'sub-03_det.hdf5'
+		#self.alias + '.hdf5'
+
+		# self.hdf5_filename = self.alias + '.h5'
 		try:
 			self.ho = HDFEyeOperator(self.pupilDir + self.hdf5_filename)
-			self.trial_times = self.ho.read_session_data(self.alias, 'trials')
+			self.trial_times = self.ho.read_session_data(self.alias, 'trials') #+'/det+03+1', 
 		except:
+			print('error')
 			return
 		self.trial_phase_times = self.ho.read_session_data(self.alias, 'trial_phases')        
 		self.trial_parameters = self.ho.read_session_data(self.alias, 'parameters')
@@ -282,12 +288,11 @@ def main():
 	# Initiate pupil object
 	pS = pupilSession(subject=subs[0], index = ids[0], task = task,analysis_params=analysis_params)
 	
-	pS.preproc()
+	# pS.preproc()
 	pS.load_h5()
-
 	pS.load_pupil(events={'fix':1, 'stim':2, 'resp':3}, omissions={'fix_lost':1})
 	pS.calcTPR(baseline_ev = 'fix', target_ev='resp')
-	pS.splitTPR()
+	# pS.splitTPR()
 
 if __name__ == '__main__':
     main()
